@@ -3,13 +3,28 @@ import { SplitserClient } from './client.ts';
 import { loadEnv, projectRoot, splitserConfig } from './config.ts';
 import { reconcile } from './actual.ts';
 import { createHandler } from './http.ts';
+import { simplefinAccounts } from './simplefin.ts';
+import { splitserEffects } from './splitser.ts';
 
 await loadEnv(projectRoot);
 const host = process.env.HOST || '127.0.0.1';
 const port = Number(process.env.PORT || 8787);
+const client = new SplitserClient(splitserConfig(projectRoot));
 const handler = createHandler({
-  client: new SplitserClient(splitserConfig(projectRoot)),
+  client,
   reconcile,
+  async simplefin(query) {
+    const { source, effects } = await splitserEffects(
+      client,
+      process.env.SPLITSER_MEMBER_NAME,
+    );
+    return simplefinAccounts({
+      balance: source.amount,
+      effects,
+      query,
+      now: Math.floor(Date.now() / 1000),
+    });
+  },
   env: process.env,
 });
 const server = http.createServer(handler);

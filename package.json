@@ -13,6 +13,7 @@
     "start": "node dist/server.js",
     "dev": "node src/server.ts",
     "reconcile": "node src/actual.ts",
+    "simplefin:setup": "node src/simplefin-setup.ts",
     "test": "node --test test/*.test.ts",
     "check": "pnpm lint && pnpm format && pnpm test",
     "typecheck": "tsc",

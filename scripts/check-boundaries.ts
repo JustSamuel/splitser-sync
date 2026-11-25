@@ -7,7 +7,11 @@ const owners: Record<string, string[]> = {
   'api.updateTransaction': ['reconcile.ts'],
   'api.setBudgetAmount': ['reconcile.ts'],
   'api.runBankSync': ['reconcile.ts'],
+  timingSafeEqual: ['http.ts'],
+  SIMPLEFIN_ACCESS_SECRET: ['server.ts', 'http.ts', 'simplefin-setup.ts'],
 };
+// The setup command exists to print freshly generated credentials.
+const mayPrintCredentials = ['simplefin-setup.ts'];
 const files = (await readdir('src')).filter((name) => name.endsWith('.ts'));
 const failures: string[] = [];
 for (const file of files) {
@@ -18,6 +22,7 @@ for (const file of files) {
     }
   }
   if (
+    !mayPrintCredentials.includes(file) &&
     /console\.(?:log|error)\([^)]*(?:password|secret|cookie|token)/i.test(
       source,
     )

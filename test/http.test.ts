@@ -5,6 +5,8 @@ import { createHandler } from '../src/http.ts';
 const env: Record<string, string | undefined> = {
   API_TOKEN: 'read-secret',
   RECONCILE_TOKEN: 'write-secret',
+  SIMPLEFIN_ACCESS_SECRET: 'sfin-secret',
+  SIMPLEFIN_PUBLIC_URL: 'https://splitser.example.com',
 };
 function setup() {
   const calls: unknown[][] = [];
@@ -25,6 +27,10 @@ function setup() {
         });
       },
     },
+    async simplefin(query: unknown) {
+      calls.push(['simplefin', query]);
+      return { errors: [], accounts: [] };
+    },
     async reconcile(options: { apply: boolean }) {
       calls.push(['reconcile', options]);
       return { dryRun: !options.apply } as never;
@@ -38,6 +44,7 @@ async function request(
   path: string,
   token: string | null = 'read-secret',
   method = 'GET',
+  authorization?: string,
 ) {
   const response = {
     status: 0,
@@ -55,13 +62,17 @@ async function request(
     {
       url: path,
       method,
-      headers: token ? { authorization: `Bearer ${token}` } : {},
+      headers: authorization
+        ? { authorization }
+        : token
+          ? { authorization: `Bearer ${token}` }
+          : {},
     },
     response as never,
   );
   return {
     ...response,
-    json: response.body ? JSON.parse(response.body) : null,
+    json: response.body.startsWith('{') ? JSON.parse(response.body) : null,
   };
 }
 
@@ -111,4 +122,53 @@ test('backend details are not exposed in HTTP responses', async () => {
   const response = await request(handler, '/balances');
   assert.equal(response.status, 502);
   assert.deepEqual(response.json, { error: 'Request failed' });
+});
+
+const basic = (user: string, password: string) =>
+  `Basic ${Buffer.from(`${user}:${password}`).toString('base64')}`;
+
+test('simplefin accounts accept only the access secret as basic auth', async () => {
+  const { handler, calls } = setup();
+  const get = (authorization?: string) =>
+    request(
+      handler,
+      '/simplefin/accounts?balances-only=1',
+      null,
+      'GET',
+      authorization,
+    );
+  assert.equal((await get()).status, 403);
+  assert.equal((await get(basic('splitser', 'wrong'))).status, 403);
+  assert.equal((await get(basic('someone', 'sfin-secret'))).status, 403);
+  assert.equal((await get('Bearer read-secret')).status, 403);
+  assert.deepEqual(calls, []);
+  const ok = await get(basic('splitser', 'sfin-secret'));
+  assert.equal(ok.status, 200);
+  assert.deepEqual(calls, [
+    [
+      'simplefin',
+      { start: undefined, end: undefined, accounts: [], balancesOnly: true },
+    ],
+  ]);
+});
+
+test('the access secret does not open the other routes', async () => {
+  const { handler } = setup();
+  assert.equal((await request(handler, '/lists', 'sfin-secret')).status, 401);
+});
+
+test('claim is disabled unless a claim token is set and then checks it', async () => {
+  const { handler } = setup();
+  const claim = (token: string) =>
+    request(handler, `/simplefin/claim/${token}`, null, 'POST');
+  assert.equal((await claim('claim-1')).status, 404);
+  env.SIMPLEFIN_CLAIM_TOKEN = 'claim-1';
+  assert.equal((await claim('wrong')).status, 403);
+  const ok = await claim('claim-1');
+  assert.equal(ok.status, 200);
+  assert.equal(
+    ok.body,
+    'https://splitser:sfin-secret@splitser.example.com/simplefin',
+  );
+  delete env.SIMPLEFIN_CLAIM_TOKEN;
 });

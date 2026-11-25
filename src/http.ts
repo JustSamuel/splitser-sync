@@ -2,6 +2,15 @@ import { timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { SplitserClient } from './client.ts';
 import type { ReconcilePlan } from './reconcile.ts';
+import { ACCESS_USER, accessUrl, parseQuery } from './simplefin.ts';
+import type { AccountQuery } from './simplefin.ts';
+
+export function safeEqual(supplied: string, secret: string): boolean {
+  return (
+    supplied.length === secret.length &&
+    timingSafeEqual(Buffer.from(supplied), Buffer.from(secret))
+  );
+}
 
 export function authorized(
   request: Pick<IncomingMessage, 'headers'>,
@@ -10,8 +19,24 @@ export function authorized(
   if (!secret) return false;
   const match = /^Bearer ([^\s]+)$/.exec(request.headers.authorization || '');
   const supplied = match?.[1];
-  if (!supplied || supplied.length !== secret.length) return false;
-  return timingSafeEqual(Buffer.from(supplied), Buffer.from(secret));
+  return Boolean(supplied) && safeEqual(supplied as string, secret);
+}
+
+function basicAuthorized(
+  request: Pick<IncomingMessage, 'headers'>,
+  secret: string | undefined,
+): boolean {
+  if (!secret) return false;
+  const match = /^Basic ([A-Za-z0-9+/=]+)$/.exec(
+    request.headers.authorization || '',
+  );
+  const decoded = Buffer.from(match?.[1] ?? '', 'base64').toString();
+  const separator = decoded.indexOf(':');
+  return (
+    separator > 0 &&
+    decoded.slice(0, separator) === ACCESS_USER &&
+    safeEqual(decoded.slice(separator + 1), secret)
+  );
 }
 
 export function sendJson(
@@ -31,6 +56,7 @@ export function sendJson(
 export interface HandlerOptions {
   client: Pick<SplitserClient, 'lists' | 'balances' | 'transactions'>;
   reconcile: (options: { apply: boolean }) => Promise<ReconcilePlan>;
+  simplefin?: (query: AccountQuery) => Promise<unknown>;
   env: Record<string, string | undefined>;
   logger?: { error: (...args: unknown[]) => void };
 }
@@ -38,6 +64,7 @@ export interface HandlerOptions {
 export function createHandler({
   client,
   reconcile,
+  simplefin,
   env,
   logger = console,
 }: HandlerOptions) {
@@ -66,6 +93,48 @@ export function createHandler({
       return;
     }
     try {
+      if (url.pathname.startsWith('/simplefin/')) {
+        const secret = env.SIMPLEFIN_ACCESS_SECRET;
+        const claimToken = env.SIMPLEFIN_CLAIM_TOKEN;
+        const claim = /^\/simplefin\/claim\/([^/]+)$/.exec(url.pathname);
+        if (request.method === 'POST' && claim) {
+          const publicUrl = env.SIMPLEFIN_PUBLIC_URL;
+          if (!secret || !claimToken || !publicUrl) {
+            sendJson(response, 404, { error: 'Not found' });
+            return;
+          }
+          if (!safeEqual(decodeURIComponent(claim[1] as string), claimToken)) {
+            sendJson(response, 403, { error: 'Forbidden' });
+            return;
+          }
+          const body = accessUrl(publicUrl, secret);
+          response.writeHead(200, {
+            'Content-Type': 'text/plain; charset=utf-8',
+            'Content-Length': Buffer.byteLength(body),
+            'Cache-Control': 'no-store',
+          });
+          response.end(body);
+          return;
+        }
+        if (
+          request.method === 'GET' &&
+          url.pathname === '/simplefin/accounts' &&
+          simplefin
+        ) {
+          if (!basicAuthorized(request, secret)) {
+            sendJson(response, 403, { error: 'Forbidden' });
+            return;
+          }
+          sendJson(
+            response,
+            200,
+            await simplefin(parseQuery(url.searchParams)),
+          );
+          return;
+        }
+        sendJson(response, 404, { error: 'Not found' });
+        return;
+      }
       const writeRoute = url.pathname === '/reconcile';
       if (
         !authorized(request, env[writeRoute ? 'RECONCILE_TOKEN' : 'API_TOKEN'])
