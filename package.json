@@ -8,7 +8,10 @@
   },
   "scripts": {
     "start": "node server.js",
-    "reconcile": "node actual.js"
+    "reconcile": "node actual.js",
+    "test": "node --test",
+    "check": "npm run check:syntax && npm test",
+    "check:syntax": "node --check server.js && node --check client.js && node --check config.js && node --check http.js && node --check actual.js && node --check reconcile.js"
   },
   "dependencies": {
     "@actual-app/api": "26.11.0"
