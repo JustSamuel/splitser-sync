@@ -5,10 +5,10 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import * as actualApi from '@actual-app/api';
 import { SplitserClient } from './client.ts';
-import type { MemberTotal, SplitserList } from './client.ts';
 import { loadEnv, projectRoot, splitserConfig } from './config.ts';
 import { reconcileWithActual } from './reconcile.ts';
-import type { ActualApi, ReconcilePlan, SplitserSource } from './reconcile.ts';
+import { splitserBalance } from './splitser.ts';
+import type { ActualApi, ReconcilePlan } from './reconcile.ts';
 
 const eur = (cents: number) => `€${(cents / 100).toFixed(2)}`;
 const fail = (message: string): never => {
@@ -36,43 +36,6 @@ function localDate(timeZone: string): string {
     parts.map((part) => [part.type, part.value]),
   );
   return `${value.year}-${value.month}-${value.day}`;
-}
-
-export async function splitserBalance(
-  client: Pick<SplitserClient, 'balances'>,
-  memberName: string | undefined,
-): Promise<SplitserSource> {
-  if (!memberName) fail('Set SPLITSER_MEMBER_NAME to your exact Splitser name');
-  const response = await client.balances();
-  const lists = response.data.map(
-    (entry: { list: SplitserList; data: MemberTotal[] }) => {
-      const members = entry.data.filter(
-        (member) => member.member.full_name === memberName,
-      );
-      if (members.length !== 1) {
-        fail(
-          `${entry.list.name}: expected one member named ${JSON.stringify(memberName)}, found ${members.length}`,
-        );
-      }
-      const member = members[0] as MemberTotal;
-      if (member.balance_total.currency !== 'EUR')
-        fail(`${entry.list.name}: expected EUR`);
-      return {
-        id: entry.list.id,
-        name: entry.list.name,
-        amount: member.balance_total.fractional,
-        sourceUpdatedAt: new Date(
-          Math.max(entry.list.modified_at || 0, entry.list.updated_at || 0) *
-            1000,
-        ).toISOString(),
-      };
-    },
-  );
-  return {
-    memberName: memberName as string,
-    amount: lists.reduce((sum, list) => sum + list.amount, 0),
-    lists,
-  };
 }
 
 async function eventually(check: () => Promise<boolean>): Promise<void> {

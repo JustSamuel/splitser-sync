@@ -18,7 +18,7 @@ export interface SplitserList {
 }
 
 export interface MemberTotal {
-  member: { full_name: string };
+  member: { id: string; full_name: string };
   balance_total: { currency: string; fractional: number };
 }
 
