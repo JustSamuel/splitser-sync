@@ -17,7 +17,7 @@
     "test": "node --test test/*.test.ts",
     "check": "pnpm lint && pnpm format && pnpm test",
     "typecheck": "tsc",
-    "lint": "pnpm typecheck && node scripts/check-boundaries.ts",
+    "lint": "pnpm typecheck && node scripts/check-boundaries.ts && node scripts/check-env-docs.ts",
     "format": "prettier --check .",
     "format:write": "prettier --write .",
     "lint:commits": "commitlint --from origin/main --to HEAD",
