@@ -120,6 +120,8 @@ Add `--json` to either command for machine-readable output. After a successful a
 docker compose up -d --build
 ```
 
+Each release publishes a ready-made image, so you can skip the build: `ghcr.io/justsamuel/splitser-sync:latest` (or pin a version such as `:1.2.3`). Use it in `compose.yaml` by replacing `build: .` with `image: ghcr.io/justsamuel/splitser-sync:latest`. Releases and version tags (`v1.2.3`) are created automatically from conventional commits: `feat:` bumps the minor version, `fix:` and dependency updates bump the patch version.
+
 The container serves a small HTTP API and can reconcile on a timer. Put the settings from `.env` into your platform's secret store rather than committing them. The `splitser-data` volume keeps the refreshed Splitser session and Actual's local cache. The published port is bound to localhost; adjust it if you front the service with a reverse proxy.
 
 To reconcile on a schedule, set:

@@ -16,7 +16,7 @@ jobs:
       contents: write
       pull-requests: write
     with:
-      auto-approve: true
+      auto-approve: false
       auto-merge: true
       # Majors need a human; CI must still pass before auto-merge completes.
       update-types: 'version-update:semver-minor,version-update:semver-patch'
