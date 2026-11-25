@@ -61,6 +61,10 @@ test('lists are paginated at 100 entries and cached', async () => {
   assert.equal(result.data.length, 2);
   assert.equal(calls.length, 2);
   assert.equal(new URL(calls[0]!.url).searchParams.get('per_page'), '100');
+  assert.deepEqual(
+    calls.map((call) => new URL(call.url).searchParams.get('page')),
+    ['1', '2'],
+  );
 });
 
 test('expired session refreshes once and retries without recursion', async () => {

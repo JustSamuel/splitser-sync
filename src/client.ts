@@ -330,7 +330,7 @@ export class SplitserClient {
     filters: Record<string, string> = {},
   ): Promise<Collection<T>> {
     const data: T[] = [];
-    let page = 0;
+    let page = 1;
     let metadata: Collection<T>;
     do {
       const url = new URL(path, this.config.baseUrl);
@@ -349,8 +349,7 @@ export class SplitserClient {
     } while (
       metadata.pagination &&
       Number.isInteger(metadata.pagination.total_pages) &&
-      (metadata.pagination.total_pages as number) >= 0 &&
-      page < (metadata.pagination.total_pages as number)
+      page <= (metadata.pagination.total_pages as number)
     );
     return { ...metadata, data };
   }
