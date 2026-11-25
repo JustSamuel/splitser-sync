@@ -1,5 +1,8 @@
 # splitser-sync
 
+[![Lint and build](https://github.com/JustSamuel/splitser-sync/actions/workflows/lint-and-build.yml/badge.svg?branch=main)](https://github.com/JustSamuel/splitser-sync/actions/workflows/lint-and-build.yml)
+![License](https://img.shields.io/github/license/JustSamuel/splitser-sync)
+
 Keep your [Splitser](https://splitser.com) balance visible in [Actual Budget](https://actualbudget.org/).
 
 Splitser tracks who owes whom in shared expense lists. Actual doesn't know about it, so money you've fronted for friends (or owe them) never shows up in your budget. This tool reads your net balance across all active Splitser lists and mirrors it into Actual:
