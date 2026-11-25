@@ -64,17 +64,18 @@ pnpm install
 
 Edit `.env`. The settings you must fill in:
 
-| Variable                                    | What it is                                                                                     |
-| ------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `SPLITSER_EMAIL`, `SPLITSER_PASSWORD`       | Your Splitser login                                                                            |
-| `SPLITSER_MEMBER_NAME`                      | Your name exactly as it appears in your Splitser lists. Must match exactly one member per list |
-| `ACTUAL_SERVER_URL`                         | URL of your Actual server                                                                      |
-| `ACTUAL_PASSWORD`                           | Actual server password                                                                         |
-| `ACTUAL_SYNC_ID`                            | The budget's Sync ID                                                                           |
-| `ACTUAL_ENCRYPTION_PASSWORD`                | Only if the budget uses end-to-end encryption                                                  |
-| `ACTUAL_ACCOUNT`, `ACTUAL_TRACKER_CATEGORY` | Names from step 1 (defaults `Splitser`, `Advances`)                                            |
-| `ACTUAL_BANK_ACCOUNTS`                      | Comma-separated on-budget accounts, e.g. `Checking,Savings`. Required for `--apply`            |
-| `ACTUAL_TIMEZONE`                           | Used to date the adjustment (default `Europe/Amsterdam`)                                       |
+| Variable                                    | What it is                                                                                        |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `SPLITSER_EMAIL`, `SPLITSER_PASSWORD`       | Your Splitser login                                                                               |
+| `SPLITSER_MEMBER_NAME`                      | Your name exactly as it appears in your Splitser lists. Must match exactly one member per list    |
+| `ACTUAL_SERVER_URL`                         | URL of your Actual server                                                                         |
+| `ACTUAL_PASSWORD`                           | Actual server password                                                                            |
+| `ACTUAL_SYNC_ID`                            | The budget's Sync ID                                                                              |
+| `ACTUAL_ENCRYPTION_PASSWORD`                | Only if the budget uses end-to-end encryption                                                     |
+| `ACTUAL_ACCOUNT`, `ACTUAL_TRACKER_CATEGORY` | Names from step 1 (defaults `Splitser`, `Advances`)                                               |
+| `ACTUAL_BANK_ACCOUNTS`                      | Comma-separated on-budget accounts, e.g. `Checking,Savings`. Required for `--apply`               |
+| `ACTUAL_TIMEZONE`                           | Used to date the adjustment (default `Europe/Amsterdam`)                                          |
+| `SIMPLEFIN_*`                               | Only to link the account through SimpleFIN; see [below](#linking-the-account-in-actual-simplefin) |
 
 Everything else in `.env.example` is optional tuning (cache lifetimes, timeouts, API tokens, scheduling).
 
@@ -199,10 +200,10 @@ Notes:
 
 ```sh
 pnpm install   # also installs the git hooks
-pnpm check     # typecheck, boundary lint, formatting, tests
+pnpm check     # typecheck, boundary and env-docs lint, formatting, tests
 ```
 
-Tests use fake backends and need no credentials. See [AGENTS.md](AGENTS.md) for the module layout.
+Tests use fake backends and need no credentials. See [AGENTS.md](AGENTS.md) for the module layout and [HARDEN-AUDIT.md](HARDEN-AUDIT.md) for which rules are enforced by checks. When you fix a mistake, add a check that would have caught it. Every variable the code reads must appear in `.env.example`, and the lint fails otherwise.
 
 Every commit must follow [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:`, `chore:` ...). A git hook and CI both enforce this. Pull requests are rebase-merged, so each commit lands on `main` exactly as written and history stays linear.
 
