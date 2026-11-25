@@ -1,5 +1,7 @@
 # splitser-sync
 
+<p align="center"><img src="assets/banner.svg" alt="Actual Budget × WieBetaaltWat" width="720"></p>
+
 [![Lint and build](https://github.com/JustSamuel/splitser-sync/actions/workflows/lint-and-build.yml/badge.svg?branch=main)](https://github.com/JustSamuel/splitser-sync/actions/workflows/lint-and-build.yml)
 ![License](https://img.shields.io/github/license/JustSamuel/splitser-sync)
 
@@ -184,3 +186,5 @@ Every commit must follow [Conventional Commits](https://www.conventionalcommits.
 ## License
 
 [MIT](LICENSE)
+
+Actual Budget and WieBetaaltWat (Splitser) names and logos belong to their respective owners and appear here only to say which services this tool connects. This project is not affiliated with or endorsed by either. The logo files in `assets/` are their owners' (Actual: [actualbudget/actual](https://github.com/actualbudget/actual), WieBetaaltWat: [wiebetaaltwat.nl](https://wiebetaaltwat.nl)) and are not covered by the MIT license.
