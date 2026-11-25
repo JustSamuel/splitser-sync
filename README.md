@@ -110,6 +110,8 @@ Check Actual: the `Splitser` account should now equal your Splitser balance, `Ad
 
 When a Splitser settlement lands in your bank account, book it in Actual as a transfer to the `Splitser` account as usual. The next run reconciles the remainder.
 
+To get every Splitser expense as its own transaction, and a real linked account in Actual, see [Linking the account in Actual](#linking-the-account-in-actual-simplefin).
+
 Add `--json` to either command for machine-readable output. After a successful apply, `reconciliation.json` (git-ignored) holds the last report.
 
 ## Running it automatically
@@ -156,10 +158,29 @@ curl -X POST -H "Authorization: Bearer $RECONCILE_TOKEN" http://127.0.0.1:8787/r
 
 That is a dry run unless you add `?apply=true` _and_ have set `ALLOW_ACTUAL_WRITES=true`. Overlapping runs get HTTP 409.
 
+### Linking the account in Actual (SimpleFIN)
+
+splitser-sync can act as a [SimpleFIN](https://www.simplefin.org/) bank, so Actual treats `Splitser` as a linked account: your share of every Splitser expense arrives as a transaction through Actual's normal bank sync. It needs a service reachable by your Actual server over HTTPS on a public address.
+
+1. Deploy splitser-sync and run `pnpm simplefin:setup https://your-host`. Set the three variables it prints on the service, then redeploy.
+2. In Actual: Settings → Bank Sync → SimpleFIN, and paste the setup token. Actual allows one SimpleFIN connection per server.
+3. On the `Splitser` account choose _Link account_ and pick `Splitser`.
+4. Remove `SIMPLEFIN_CLAIM_TOKEN` and redeploy so the token cannot be claimed again.
+5. Run `pnpm reconcile` (dry run first). Reconcile now absorbs rows that Actual imported itself: it marks them reconciled, trims the adjustment row so the balance still equals Splitser's, and keeps the tracker at minus the balance.
+
+Notes:
+
+- Only expenses and income appear as transactions. Settlements are not included because they don't change the balance Splitser reports.
+- Actual never rewrites the amount of a row it already imported. If you later edit or delete a Splitser expense, the next reconcile corrects the difference through the adjustment row.
+- Actual may merge two Splitser rows of the same amount within a week into one. The adjustment row absorbs this too.
+- Don't use Actual's own _Reconcile_ on this account; reconcile.ts uses that flag to tell new rows from handled ones.
+- To undo, unlink the account in Actual and run `pnpm reconcile`.
+
 ## Security notes
 
 - `.env`, the cookie file, the Actual cache and `reconciliation.json` are git-ignored and excluded from the Docker build context. Never commit them.
 - Use long random values for `API_TOKEN` and `RECONCILE_TOKEN`, and don't expose the API publicly without a token.
+- `/simplefin/accounts` accepts only the separate `SIMPLEFIN_ACCESS_SECRET`; the bearer tokens don't work there and the secret doesn't work elsewhere.
 - Credentials never appear in logs; `pnpm lint` fails on code that logs them.
 
 ## Troubleshooting
@@ -168,8 +189,8 @@ That is a dry run unless you add `?apply=true` _and_ have set `ALLOW_ACTUAL_WRIT
 | ------------------------------------------------------ | ------------------------------------------------------------------------------------ |
 | `Actual needs an off-budget account named ...`         | Create it, or set `ACTUAL_ACCOUNT`. It must be marked off-budget                     |
 | `... must have carryover enabled`                      | Enable carryover on the tracker category                                             |
-| `... does not equal minus ...; fix the existing drift` | The account and tracker disagree. Correct that in Actual first                       |
-| `Bank sync imported N transaction(s); book them ...`   | Categorize the newly imported bank transactions in Actual, then run again            |
+| `... does not equal minus ...; fix the existing drift` | The account and tracker disagree beyond new linked imports. Correct that in Actual   |
+| `Bank sync imported N transaction(s); book them ...`   | Categorize the newly imported _bank_ transactions in Actual, then run again          |
 | `expected one member named ...`                        | Fix `SPLITSER_MEMBER_NAME` to match your name in that list exactly                   |
 | Login or API errors from Splitser                      | Check credentials; the private API may have changed (`SPLITSER_API_VERSION`)         |
 | Errors opening the budget                              | Check the Sync ID, and that the server version matches the `@actual-app/api` version |

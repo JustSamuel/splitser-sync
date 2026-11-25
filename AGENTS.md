@@ -14,9 +14,11 @@ All source is in `src/`, written as erasable TypeScript (no enums or parameter p
 
 - `client.ts`: Splitser authentication, cookie persistence, HTTP, caching.
 - `http.ts`: inbound HTTP authentication and response redaction.
+- `splitser.ts`: balance resolution and the member's per-transaction effects (pure).
+- `simplefin.ts`: SimpleFIN response shapes, setup token and access URL (pure). `simplefin-setup.ts` is its CLI.
 - `reconcile.ts`: reconciliation invariants and the only Actual mutations.
 - `actual.ts`: real API adapter and CLI.
 - `config.ts`: `.env` loading and settings.
 - `server.ts`: composition and scheduling.
 
-Keep private cookie and Actual state in `/data` in containers. Reconciliation refuses unbooked bank imports, changed bank-reported balances, and pre-existing tracker drift.
+Keep private cookie and Actual state in `/data` in containers. Reconciliation refuses unbooked bank imports, changed bank-reported balances, and tracker drift. Rows Actual imported into the Splitser account itself (SimpleFIN) are expected: they are marked reconciled and the adjustment row absorbs any difference.
