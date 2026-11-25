@@ -1,0 +1,29 @@
+{
+  "boundaries": {
+    "node:fs/promises": {
+      "client.ts": "persists the Splitser cookie jar",
+      "config.ts": "reads .env",
+      "actual.ts": "creates the Actual data dir and writes reconciliation.json"
+    },
+    "fetch": {
+      "client.ts": "the only module allowed to call Splitser"
+    },
+    "timingSafeEqual": {
+      "http.ts": "constant-time comparison of inbound secrets"
+    },
+    "SIMPLEFIN_ACCESS_SECRET": {
+      "http.ts": "authenticates /simplefin/accounts",
+      "simplefin-setup.ts": "generates the secret"
+    },
+    "api.addTransactions": { "reconcile.ts": "owns every Actual mutation" },
+    "api.updateTransaction": { "reconcile.ts": "owns every Actual mutation" },
+    "api.setBudgetAmount": { "reconcile.ts": "owns every Actual mutation" },
+    "api.runBankSync": { "reconcile.ts": "owns every Actual mutation" },
+    "splitser:balance:": {
+      "reconcile.ts": "defines the adjustment's imported id and recognises it"
+    }
+  },
+  "mayPrintCredentials": {
+    "simplefin-setup.ts": "its purpose is to print freshly generated credentials"
+  }
+}
