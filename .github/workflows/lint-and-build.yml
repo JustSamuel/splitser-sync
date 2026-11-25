@@ -10,14 +10,14 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
 
 jobs:
   lint-and-build:
-    uses: GEWIS/actions/.github/workflows/lint-and-build-pnpm.yml@v1
+    uses: GEWIS/actions/.github/workflows/lint-and-build-pnpm.yml@00d200d2d7d17ad3d58c7ec3464c7d2ecff2d814 # v1
     with:
       node-version: '24.x'
       lint: true

@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   dependabot:
-    uses: GEWIS/actions/.github/workflows/dependabot-auto-merge.yml@v1
+    uses: GEWIS/actions/.github/workflows/dependabot-auto-merge.yml@00d200d2d7d17ad3d58c7ec3464c7d2ecff2d814 # v1
     permissions:
       actions: write
       contents: write
