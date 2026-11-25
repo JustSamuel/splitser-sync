@@ -91,7 +91,7 @@ test('per-list effects add up to the balance for random lists', () => {
   let seed = 7;
   const random = (max: number) => {
     seed = (seed * 1103515245 + 12345) % 2 ** 31;
-    return seed % max;
+    return Math.floor(seed / 65536) % max;
   };
   const members = [me, 'a', 'b'];
   const entries = Array.from({ length: 200 }, (_, index) => {

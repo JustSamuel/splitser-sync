@@ -101,6 +101,11 @@ function fake({
     async addTransactions(account, rows) {
       calls.push(['add', account, rows]);
       state.mirror += rows[0]!.amount as number;
+      state.rows.push({
+        id: rows[0]!.id as string,
+        imported_id: rows[0]!.imported_id as string,
+        amount: rows[0]!.amount as number,
+      });
     },
     async updateTransaction(id, fields) {
       calls.push(['update', id, fields]);
@@ -113,8 +118,8 @@ function fake({
     },
     async setBudgetAmount(month, id, amount) {
       calls.push(['budget', month, id, amount]);
+      state.tracker += amount - state.budgeted;
       state.budgeted = amount;
-      state.tracker = -state.mirror;
     },
     async sync() {
       calls.push('sync');
@@ -280,4 +285,62 @@ test('bank sync imports into the Splitser account are allowed, others are not', 
   assert.equal((await run(own)).verified, true);
   const foreign = fake({ bankResult: { newTransactions: ['elsewhere'] } });
   await assert.rejects(run(foreign), /book them in Actual/);
+});
+
+test('random histories end with account = balance, tracker = -balance and replay as a no-op', async () => {
+  let seed = 42;
+  const random = (max: number) => {
+    seed = (seed * 1103515245 + 12345) % 2 ** 31;
+    return Math.floor(seed / 65536) % max;
+  };
+  const seen = {
+    imports: 0,
+    noImports: 0,
+    trackerMoved: 0,
+    unchanged: 0,
+    existingAdjustment: 0,
+  };
+  for (let round = 0; round < 300; round++) {
+    const start = random(50000) - 10000;
+    const hasAdjustment = random(2) === 1;
+    const rows: Row[] = hasAdjustment ? [adjustment(start)] : [];
+    const imports = Array.from({ length: random(4) }, (_, index) =>
+      imported(`r${round}-${index}`, random(4000) - 2000),
+    );
+    const importSum = imports.reduce((sum, row) => sum + row.amount, 0);
+    const mirror = (hasAdjustment ? start : 0) + importSum;
+    const balance = random(3) === 0 ? mirror : random(60000) - 20000;
+    const backend = fake({
+      mirror,
+      tracker: hasAdjustment ? -start : 0,
+      rows: [...rows, ...imports],
+      bankResult: { newTransactions: imports.map((row) => row.id) },
+    });
+    const bankBefore = backend.state.reported;
+    const wanted = { ...source, amount: balance };
+    const first = await run(backend, true, wanted);
+    assert.equal(backend.state.mirror, balance, 'account equals balance');
+    assert.equal(
+      backend.state.tracker,
+      0 - balance,
+      'tracker equals minus balance',
+    );
+    assert.equal(backend.state.reported, bankBefore, 'bank balance untouched');
+    assert.ok(
+      imports.every(
+        (row) =>
+          backend.state.rows.find((entry) => entry.id === row.id)?.reconciled,
+      ),
+    );
+    const second = await run(backend, true, wanted);
+    assert.equal(second.adjustment, null, 'replay writes no adjustment');
+    assert.equal(second.trackerBudgetChange, null, 'replay moves no budget');
+    assert.deepEqual(second.imports, { count: 0, amount: 0 });
+    seen[imports.length ? 'imports' : 'noImports']++;
+    if (first.trackerBudgetChange) seen.trackerMoved++;
+    if (!first.adjustment && !first.trackerBudgetChange) seen.unchanged++;
+    if (hasAdjustment && first.adjustment) seen.existingAdjustment++;
+  }
+  for (const [name, count] of Object.entries(seen))
+    assert.ok(count >= 20, `generator stopped covering ${name} (${count})`);
 });
