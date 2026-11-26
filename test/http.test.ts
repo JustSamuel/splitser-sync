@@ -8,25 +8,29 @@ const env: Record<string, string | undefined> = {
   SIMPLEFIN_ACCESS_SECRET: 'sfin-secret',
   SIMPLEFIN_PUBLIC_URL: 'https://splitser.example.com',
 };
+const client = (account: string, calls: unknown[][]) => ({
+  async lists(options?: { refresh?: boolean }) {
+    calls.push(['lists', options, account]);
+    return { data: [] };
+  },
+  async transactions(): Promise<never> {
+    throw new Error('unused');
+  },
+  async balances(): Promise<never> {
+    throw Object.assign(new Error('Secret backend detail'), {
+      status: 502,
+    });
+  },
+});
 function setup() {
   const calls: unknown[][] = [];
   const handler = createHandler({
     env,
     logger: { error() {} },
-    client: {
-      async lists(options?: { refresh?: boolean }) {
-        calls.push(['lists', options]);
-        return { data: [] };
-      },
-      async transactions(): Promise<never> {
-        throw new Error('unused');
-      },
-      async balances(): Promise<never> {
-        throw Object.assign(new Error('Secret backend detail'), {
-          status: 502,
-        });
-      },
-    },
+    clients: new Map([
+      ['splitser', client('splitser', calls)],
+      ['splitser-2', client('splitser-2', calls)],
+    ]),
     async simplefin(query: unknown) {
       calls.push(['simplefin', query]);
       return { errors: [], accounts: [] };
@@ -96,6 +100,20 @@ test('refresh accepts only the exact value 1', async () => {
   assert.deepEqual(
     calls.map((call) => (call[1] as { refresh: boolean }).refresh),
     [true, false],
+  );
+});
+
+test('account selects the Splitser account and defaults to the first', async () => {
+  const { handler, calls } = setup();
+  assert.equal((await request(handler, '/lists')).status, 200);
+  assert.equal(
+    (await request(handler, '/lists?account=splitser-2')).status,
+    200,
+  );
+  assert.equal((await request(handler, '/lists?account=other')).status, 404);
+  assert.deepEqual(
+    calls.map((call) => call[2]),
+    ['splitser', 'splitser-2'],
   );
 });
 

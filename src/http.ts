@@ -54,7 +54,11 @@ export function sendJson(
 }
 
 export interface HandlerOptions {
-  client: Pick<SplitserClient, 'lists' | 'balances' | 'transactions'>;
+  /** Splitser clients by account id; the first one is the default. */
+  clients: Map<
+    string,
+    Pick<SplitserClient, 'lists' | 'balances' | 'transactions'>
+  >;
   reconcile: (options: { apply: boolean }) => Promise<ReconcilePlan>;
   simplefin?: (query: AccountQuery) => Promise<unknown>;
   env: Record<string, string | undefined>;
@@ -62,7 +66,7 @@ export interface HandlerOptions {
 }
 
 export function createHandler({
-  client,
+  clients,
   reconcile,
   simplefin,
   env,
@@ -144,8 +148,26 @@ export function createHandler({
         });
         return;
       }
+      if (request.method === 'POST' && writeRoute) {
+        const apply = url.searchParams.get('apply') === 'true';
+        if (apply && env.ALLOW_ACTUAL_WRITES !== 'true') {
+          sendJson(response, 403, { error: 'Actual writes are disabled' });
+          return;
+        }
+        sendJson(response, 200, await runReconciliation(apply));
+        return;
+      }
       const refresh = url.searchParams.get('refresh') === '1';
       const listId = url.searchParams.get('list_id') || undefined;
+      const accountId = url.searchParams.get('account');
+      const client =
+        accountId === null
+          ? clients.values().next().value
+          : clients.get(accountId);
+      if (!client) {
+        sendJson(response, 404, { error: 'Splitser account not found' });
+        return;
+      }
       if (request.method === 'GET' && url.pathname === '/lists') {
         sendJson(response, 200, await client.lists({ refresh }));
         return;
@@ -168,15 +190,6 @@ export function createHandler({
             listId === undefined ? { refresh } : { listId, refresh },
           ),
         );
-        return;
-      }
-      if (request.method === 'POST' && writeRoute) {
-        const apply = url.searchParams.get('apply') === 'true';
-        if (apply && env.ALLOW_ACTUAL_WRITES !== 'true') {
-          sendJson(response, 403, { error: 'Actual writes are disabled' });
-          return;
-        }
-        sendJson(response, 200, await runReconciliation(apply));
         return;
       }
       sendJson(response, 404, { error: 'Not found' });

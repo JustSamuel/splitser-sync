@@ -132,10 +132,7 @@ export async function splitserEffects(
   const source = await splitserBalance(client, memberName);
   const { data } = await client.transactions();
   const effects: Effect[] = [];
-  for (const list of source.lists as (SplitserSource['lists'][number] & {
-    id: string;
-    memberId: string;
-  })[]) {
+  for (const list of source.lists) {
     const entry = data.find((item) => item.list.id === list.id);
     const listEffects = memberEffects(
       { id: list.id, name: list.name },

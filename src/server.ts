@@ -1,6 +1,6 @@
 import http from 'node:http';
 import { SplitserClient } from './client.ts';
-import { loadEnv, projectRoot, splitserConfig } from './config.ts';
+import { loadEnv, projectRoot, splitserAccounts } from './config.ts';
 import { reconcile } from './actual.ts';
 import { createHandler } from './http.ts';
 import { simplefinAccounts } from './simplefin.ts';
@@ -9,18 +9,29 @@ import { splitserEffects } from './splitser.ts';
 await loadEnv(projectRoot);
 const host = process.env.HOST || '127.0.0.1';
 const port = Number(process.env.PORT || 8787);
-const client = new SplitserClient(splitserConfig(projectRoot));
+const accounts = splitserAccounts(projectRoot).map((account) => ({
+  ...account,
+  client: new SplitserClient(account.splitser),
+}));
 const handler = createHandler({
-  client,
+  clients: new Map(accounts.map((account) => [account.id, account.client])),
   reconcile,
   async simplefin(query) {
-    const { source, effects } = await splitserEffects(
-      client,
-      process.env.SPLITSER_MEMBER_NAME,
-    );
     return simplefinAccounts({
-      balance: source.amount,
-      effects,
+      accounts: await Promise.all(
+        accounts.map(async (account) => {
+          const { source, effects } = await splitserEffects(
+            account.client,
+            account.memberName,
+          );
+          return {
+            id: account.id,
+            name: account.actualAccount,
+            balance: source.amount,
+            effects,
+          };
+        }),
+      ),
       query,
       now: Math.floor(Date.now() / 1000),
     });

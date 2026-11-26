@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import * as actualApi from '@actual-app/api';
 import { SplitserClient } from './client.ts';
-import { loadEnv, projectRoot, splitserConfig } from './config.ts';
+import { loadEnv, projectRoot, splitserAccounts } from './config.ts';
 import { reconcileWithActual } from './reconcile.ts';
 import { splitserBalance } from './splitser.ts';
 import type { ActualApi, ReconcilePlan } from './reconcile.ts';
@@ -51,11 +51,15 @@ export async function reconcile({
   json = false,
 } = {}): Promise<ReconcilePlan> {
   await loadEnv(projectRoot);
-  const source = await splitserBalance(
-    new SplitserClient(splitserConfig(projectRoot)),
-    process.env.SPLITSER_MEMBER_NAME,
+  const mirrors = await Promise.all(
+    splitserAccounts(projectRoot).map(async (account) => ({
+      accountName: account.actualAccount,
+      source: await splitserBalance(
+        new SplitserClient(account.splitser),
+        account.memberName,
+      ),
+    })),
   );
-  const accountName = process.env.ACTUAL_ACCOUNT || 'Splitser';
   const trackerName = process.env.ACTUAL_TRACKER_CATEGORY || 'Advances';
   const today = localDate(process.env.ACTUAL_TIMEZONE || 'Europe/Amsterdam');
   const month = today.slice(0, 7);
@@ -84,7 +88,7 @@ export async function reconcile({
       }),
     );
     const plan = await reconcileWithActual({
-      source,
+      mirrors,
       apply,
       // The real API is a superset of the slice reconciliation uses.
       api: {
@@ -93,7 +97,6 @@ export async function reconcile({
         eventually,
       } as unknown as ActualApi,
       config: {
-        accountName,
         trackerName,
         today,
         month,
@@ -107,20 +110,22 @@ export async function reconcile({
     plan.date = today;
     if (json) console.log(JSON.stringify(plan, null, 2));
     else {
-      console.log(
-        `Splitser (${source.memberName}): ${eur(source.amount)} across ${source.lists.length} active lists`,
-      );
-      for (const list of source.lists)
-        console.log(`  ${list.name}: ${eur(list.amount)}`);
-      console.log(
-        `Actual ${accountName}: ${eur(plan.account.before)}; proposed correction: ${eur(plan.adjustment?.amount || 0)}`,
-      );
+      for (const { name, source, before, adjustment } of plan.accounts) {
+        console.log(
+          `Splitser (${source.memberName}): ${eur(source.amount)} across ${source.lists.length} active lists`,
+        );
+        for (const list of source.lists)
+          console.log(`  ${list.name}: ${eur(list.amount)}`);
+        console.log(
+          `Actual ${name}: ${eur(before)}; proposed correction: ${eur(adjustment?.amount || 0)}`,
+        );
+      }
       console.log(
         `${trackerName} ${month}: ${eur(plan.tracker.before)} -> ${eur(plan.tracker.after)}`,
       );
       console.log(
         apply
-          ? 'Applying one idempotent balance adjustment and the matching tracker budget correction.'
+          ? 'Applying one idempotent balance adjustment per account and the matching tracker budget correction.'
           : 'DRY RUN: no Actual changes. Re-run with --apply to write.',
       );
     }
@@ -132,7 +137,7 @@ export async function reconcile({
       );
       if (!json)
         console.log(
-          `Verified: ${accountName} = ${eur(source.amount)}, ${trackerName} = ${eur(-source.amount)}; bank balances unchanged.`,
+          `Verified: ${plan.accounts.map((account) => `${account.name} = ${eur(account.after)}`).join(', ')}, ${trackerName} = ${eur(plan.tracker.after)}; bank balances unchanged.`,
         );
     }
     return plan;

@@ -19,6 +19,9 @@ const effect = (id: string, amount: number, postedAt: number): Effect => ({
   transactedAt: postedAt - 10,
 });
 const effects = [effect('a', -5, 100), effect('b', 123456, 200)];
+const splitser = (balance: number) => [
+  { id: 'splitser', name: 'Splitser', balance, effects },
+];
 const query = (
   extra: Partial<Parameters<typeof simplefinAccounts>[0]['query']> = {},
 ) => ({
@@ -37,8 +40,7 @@ test('amounts always have two decimals and keep their sign', () => {
 
 test('account carries balance, EUR and transactions newest first', () => {
   const { accounts } = simplefinAccounts({
-    balance: 13134,
-    effects,
+    accounts: splitser(13134),
     query: query(),
     now: 300,
   });
@@ -60,8 +62,7 @@ test('account carries balance, EUR and transactions newest first', () => {
 
 test('balances-only omits transactions', () => {
   const { accounts } = simplefinAccounts({
-    balance: 1,
-    effects,
+    accounts: splitser(1),
     query: query({ balancesOnly: true }),
     now: 1,
   });
@@ -73,8 +74,7 @@ test('date window is inclusive at the start and exclusive at the end', () => {
     (
       (
         simplefinAccounts({
-          balance: 0,
-          effects,
+          accounts: splitser(0),
           query: query({ start, end }),
           now: 1,
         }).accounts[0] as any
@@ -85,14 +85,37 @@ test('date window is inclusive at the start and exclusive at the end', () => {
   assert.deepEqual(ids(0, 100), []);
 });
 
-test('unknown account ids return no accounts', () => {
-  const result = simplefinAccounts({
-    balance: 0,
-    effects,
-    query: query({ accounts: ['other'] }),
-    now: 1,
-  });
-  assert.deepEqual(result.accounts, []);
+test('one response carries every account, each with its own rows', () => {
+  const accounts = [
+    ...splitser(13134),
+    {
+      id: 'splitser-2',
+      name: 'Splitser Partner',
+      balance: -5000,
+      effects: [effect('a', -5000, 150)],
+    },
+  ];
+  const response = (selected: string[]) =>
+    simplefinAccounts({
+      accounts,
+      query: query({ accounts: selected }),
+      now: 1,
+    }).accounts.map((account) => [
+      account.id,
+      account.name,
+      account.balance,
+      'transactions' in account
+        ? account.transactions.map((row) => row.amount)
+        : [],
+    ]);
+  assert.deepEqual(response([]), [
+    ['splitser', 'Splitser', '131.34', ['1234.56', '-0.05']],
+    ['splitser-2', 'Splitser Partner', '-50.00', ['-50.00']],
+  ]);
+  assert.deepEqual(response(['splitser-2']), [
+    ['splitser-2', 'Splitser Partner', '-50.00', ['-50.00']],
+  ]);
+  assert.deepEqual(response(['other']), []);
 });
 
 test('query parameters follow the SimpleFIN names', () => {

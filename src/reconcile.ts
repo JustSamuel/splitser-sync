@@ -5,11 +5,16 @@ const fail = (message: string): never => {
 export interface SplitserSource {
   memberName: string;
   amount: number;
-  lists: { name: string; amount: number }[];
+  lists: { id: string; memberId: string; name: string; amount: number }[];
+}
+
+/** One Splitser account and the off-budget Actual account that mirrors it. */
+export interface Mirror {
+  accountName: string;
+  source: SplitserSource;
 }
 
 export interface ReconcileConfig {
-  accountName: string;
   trackerName: string;
   bankNames: string[];
   today: string;
@@ -76,16 +81,11 @@ export interface ActualApi {
   eventually(check: () => Promise<boolean>): Promise<void>;
 }
 
-export interface ReconcilePlan {
-  dryRun: boolean;
+export interface AccountPlan {
+  name: string;
   source: SplitserSource;
-  account: { name: string; before: number; after: number };
-  tracker: {
-    name: string;
-    before: number;
-    after: number;
-    budgetedBefore: number;
-  };
+  before: number;
+  after: number;
   /** Splitser rows that Actual's own bank sync added since the last run. */
   imports: { count: number; amount: number };
   adjustment: {
@@ -93,33 +93,68 @@ export interface ReconcilePlan {
     existingTransactionId: string | null;
     amount: number;
   } | null;
+  actualAfter?: number;
+}
+
+export interface ReconcilePlan {
+  dryRun: boolean;
+  /** One entry per Splitser account, each mirrored by its own Actual account. */
+  accounts: AccountPlan[];
+  /** The one tracker category that offsets all accounts together. */
+  tracker: {
+    name: string;
+    before: number;
+    after: number;
+    budgetedBefore: number;
+  };
   trackerBudgetChange: { month: string; from: number; to: number } | null;
   bankAccounts: string[];
   bankSync: { newTransactions?: unknown[] } | null;
   date?: string;
   applied?: boolean;
   verified?: boolean;
-  actualAfter?: number;
 }
 
 export async function reconcileWithActual({
-  source,
+  mirrors,
   apply,
   api,
   config,
 }: {
-  source: SplitserSource;
+  mirrors: Mirror[];
   apply: boolean;
   api: ActualApi;
   config: ReconcileConfig;
 }): Promise<ReconcilePlan> {
+  const counted = new Map<string, string>();
+  for (const { accountName, source } of mirrors) {
+    for (const list of source.lists) {
+      const key = `${list.id}:${list.memberId}`;
+      const other = counted.get(key);
+      if (other !== undefined)
+        fail(
+          `${list.name}: ${source.memberName} is counted by both ${JSON.stringify(other)} and ${JSON.stringify(accountName)}; each Splitser account must be a different person`,
+        );
+      counted.set(key, accountName);
+    }
+  }
+
   const accounts = await api.getAccounts();
-  const account = accounts.find((entry) => entry.name === config.accountName);
-  if (!account?.offbudget)
-    fail(
-      `Actual needs an off-budget account named ${JSON.stringify(config.accountName)}`,
-    );
-  const mirror = account as ActualAccount;
+  const targets = mirrors.map((mirror, index) => {
+    if (
+      mirrors.findIndex((other) => other.accountName === mirror.accountName) !==
+      index
+    )
+      fail(
+        `Two Splitser accounts mirror into ${JSON.stringify(mirror.accountName)}`,
+      );
+    const account = accounts.find((entry) => entry.name === mirror.accountName);
+    if (!account?.offbudget)
+      fail(
+        `Actual needs an off-budget account named ${JSON.stringify(mirror.accountName)}`,
+      );
+    return { ...mirror, account: account as ActualAccount };
+  });
   const bankAccounts = config.bankNames.map(
     (name) =>
       accounts.find((entry) => entry.name === name && !entry.offbudget) ||
@@ -150,11 +185,14 @@ export async function reconcileWithActual({
       fail('Actual bank sync returned an invalid result');
     const imported = bankSync?.newTransactions ?? [];
     if (imported.length > 0) {
-      const own = new Set(
-        (await api.getTransactions(mirror.id, '0000-01-01', '9999-12-31')).map(
-          (row) => row.id,
-        ),
-      );
+      const own = new Set<string>();
+      for (const { account } of targets)
+        for (const row of await api.getTransactions(
+          account.id,
+          '0000-01-01',
+          '9999-12-31',
+        ))
+          own.add(row.id);
       const foreign = imported.filter((id) => !own.has(String(id)));
       if (foreign.length > 0) {
         fail(
@@ -180,33 +218,53 @@ export async function reconcileWithActual({
   if (!tracker.carryover)
     fail(`${config.trackerName} must have carryover enabled`);
 
-  const rows = await api.getTransactions(mirror.id, '0000-01-01', '9999-12-31');
-  const adjustments = rows.filter((row) =>
-    row.imported_id?.startsWith('splitser:balance:'),
-  );
-  if (adjustments.length > 1)
-    fail(
-      'Multiple automatic Splitser adjustments found; inspect them before continuing',
+  const states = [];
+  for (const target of targets) {
+    const rows = await api.getTransactions(
+      target.account.id,
+      '0000-01-01',
+      '9999-12-31',
     );
-  const existing = adjustments[0];
-  const newImports = rows.filter(
-    (row) =>
-      row.imported_id?.startsWith('splitser:') &&
-      row.imported_id !== ADJUSTMENT_ID &&
-      !row.reconciled &&
-      !row.transfer_id,
-  );
-  const importedAmount = newImports.reduce(
-    (sum, row) => sum + (row.amount ?? 0),
-    0,
-  );
-  const actualBefore = await api.getAccountBalance(mirror.id);
-  const delta = source.amount - actualBefore;
+    const adjustments = rows.filter((row) =>
+      row.imported_id?.startsWith('splitser:balance:'),
+    );
+    if (adjustments.length > 1)
+      fail(
+        `Multiple automatic Splitser adjustments found in ${JSON.stringify(target.accountName)}; inspect them before continuing`,
+      );
+    const newImports = rows.filter(
+      (row) =>
+        row.imported_id?.startsWith('splitser:') &&
+        row.imported_id !== ADJUSTMENT_ID &&
+        !row.reconciled &&
+        !row.transfer_id,
+    );
+    const before = await api.getAccountBalance(target.account.id);
+    states.push({
+      ...target,
+      existing: adjustments[0],
+      newImports,
+      importedAmount: newImports.reduce(
+        (sum, row) => sum + (row.amount ?? 0),
+        0,
+      ),
+      before,
+      delta: target.source.amount - before,
+    });
+  }
+  const sum = (values: number[]) =>
+    values.reduce((total, value) => total + value, 0);
+  const total = sum(states.map((state) => state.source.amount));
   const trackerBefore = tracker.balance;
-  const trackerChange = -source.amount - trackerBefore;
-  if (apply && actualBefore + trackerBefore !== importedAmount) {
+  const trackerChange = -total - trackerBefore;
+  const newImports = states.flatMap((state) => state.newImports);
+  if (
+    apply &&
+    sum(states.map((state) => state.before)) + trackerBefore !==
+      sum(states.map((state) => state.importedAmount))
+  ) {
     fail(
-      `${config.trackerName} does not equal minus ${config.accountName} (allowing for ${newImports.length} new imported row(s)); fix the existing drift before reconciling`,
+      `${config.trackerName} does not equal minus ${states.map((state) => state.accountName).join(' + ')} (allowing for ${newImports.length} new imported row(s)); fix the existing drift before reconciling`,
     );
   }
   if (apply && !(await api.getBudgetMonths()).includes(config.month)) {
@@ -215,27 +273,27 @@ export async function reconcileWithActual({
 
   const plan: ReconcilePlan = {
     dryRun: !apply,
-    source,
-    account: {
-      name: config.accountName,
-      before: actualBefore,
-      after: source.amount,
-    },
+    accounts: states.map((state) => ({
+      name: state.accountName,
+      source: state.source,
+      before: state.before,
+      after: state.source.amount,
+      imports: { count: state.newImports.length, amount: state.importedAmount },
+      adjustment:
+        state.delta === 0
+          ? null
+          : {
+              importedId: ADJUSTMENT_ID,
+              existingTransactionId: state.existing?.id || null,
+              amount: state.delta,
+            },
+    })),
     tracker: {
       name: config.trackerName,
       before: trackerBefore,
-      after: -source.amount,
+      after: -total,
       budgetedBefore: tracker.budgeted,
     },
-    imports: { count: newImports.length, amount: importedAmount },
-    adjustment:
-      delta === 0
-        ? null
-        : {
-            importedId: 'splitser:balance:current',
-            existingTransactionId: existing?.id || null,
-            amount: delta,
-          },
     trackerBudgetChange:
       trackerChange === 0
         ? null
@@ -248,20 +306,25 @@ export async function reconcileWithActual({
     bankSync,
   };
 
-  if (apply && (delta !== 0 || trackerChange !== 0 || newImports.length > 0)) {
-    if (delta !== 0) {
+  if (
+    apply &&
+    (states.some((state) => state.delta !== 0) ||
+      trackerChange !== 0 ||
+      newImports.length > 0)
+  ) {
+    for (const { account, source, existing, delta } of states) {
+      if (delta === 0) continue;
       const notes = `Splitser balance sync: ${source.lists.length} active lists, ${config.today}`;
-      const id = existing?.id || config.id();
       if (existing)
-        await api.updateTransaction(id, {
+        await api.updateTransaction(existing.id, {
           date: config.today,
           amount: (existing.amount ?? 0) + delta,
           notes,
         });
       else
-        await api.addTransactions(mirror.id, [
+        await api.addTransactions(account.id, [
           {
-            id,
+            id: config.id(),
             date: config.today,
             amount: delta,
             notes,
@@ -279,15 +342,16 @@ export async function reconcileWithActual({
     for (const row of newImports)
       await api.updateTransaction(row.id, { reconciled: true });
     await api.sync();
-    await api.eventually(
-      async () => (await api.getAccountBalance(mirror.id)) === source.amount,
-    );
+    for (const { account, source } of states)
+      await api.eventually(
+        async () => (await api.getAccountBalance(account.id)) === source.amount,
+      );
     await api.eventually(async () => {
       const current = (await api.getBudgetMonth(config.month)).categoryGroups
         .flatMap((group) => group.categories)
         .find((entry) => entry.id === tracker.id);
       return (
-        current?.balance === -source.amount &&
+        current?.balance === -total &&
         current?.budgeted === tracker.budgeted + trackerChange
       );
     });
@@ -296,11 +360,10 @@ export async function reconcileWithActual({
         'Bank balances changed. Inspect Actual immediately; do not run reconciliation again.',
       );
     }
-    Object.assign(plan, {
-      applied: true,
-      verified: true,
-      actualAfter: await api.getAccountBalance(mirror.id),
-    });
+    for (const [index, { account }] of states.entries())
+      (plan.accounts[index] as AccountPlan).actualAfter =
+        await api.getAccountBalance(account.id);
+    Object.assign(plan, { applied: true, verified: true });
   }
   return plan;
 }
