@@ -106,7 +106,7 @@ Add `--json` for machine-readable output. After a successful apply, `reconciliat
 
 Before and after each write, reconcile:
 
-- stops if the tracker doesn't match the account, apart from rows Actual imported itself
+- stops if the tracker doesn't match the account(s), apart from rows Actual imported itself
 - runs bank sync first and stops if that pulled in bank transactions you haven't booked yet
 - verifies both balances after writing
 - aborts if any bank account balance changed
@@ -142,6 +142,26 @@ A few things worth knowing:
 - Don't use Actual's own _Reconcile_ button on this account. Reconcile here uses that flag to tell new rows from handled ones.
 - To go back, unlink the account in Actual and run `pnpm reconcile`.
 
+## More than one Splitser account
+
+If you and a partner each have a Splitser account, both can feed the same budget. Each Splitser account gets its own off-budget account, and the one `Advances` category holds minus their total. Whatever one of you owes the other cancels out there, so `Advances` shows what the household is owed.
+
+1. In Actual, create a second off-budget account, say `Splitser Partner`, starting balance 0.
+2. Add the partner's settings to `.env` with a `_2` suffix:
+
+   ```text
+   SPLITSER_EMAIL_2=partner@example.com
+   SPLITSER_PASSWORD_2=...
+   SPLITSER_MEMBER_NAME_2=Partner's name as Splitser shows it
+   ACTUAL_ACCOUNT_2=Splitser Partner
+   ```
+
+   A third account uses `_3`, and so on. Each account keeps its own Splitser session in `cookies-2.txt` next to `COOKIE_FILE`; set `COOKIE_FILE_2` to put it elsewhere.
+
+3. Run `pnpm reconcile`. It lists every account with its own correction, and one change to `Advances`.
+
+When linked, the one SimpleFIN credential serves every account. No new setup token is needed: choose _Link account_ on `Splitser Partner` and pick the SimpleFIN account with the same name. Each account must be a different person; reconcile stops if two of them resolve to the same member of a list.
+
 ## Running it
 
 ### Docker or Coolify
@@ -174,7 +194,7 @@ curl http://127.0.0.1:8787/balances
 curl 'http://127.0.0.1:8787/transactions?list_id=LIST_UUID'
 ```
 
-`/transactions` returns expenses, income and settlements. Lists are cached for 60 seconds and balances and transactions for 5 minutes, and `?refresh=1` skips the cache. Set `API_TOKEN` to require `Authorization: Bearer <token>` on everything except `/health`. Without it, keep the service on localhost or a private network.
+`/transactions` returns expenses, income and settlements. Lists are cached for 60 seconds and balances and transactions for 5 minutes, and `?refresh=1` skips the cache. With [more than one Splitser account](#more-than-one-splitser-account), `?account=splitser-2` (or `-3`, ...) selects another account; the default is the first. Set `API_TOKEN` to require `Authorization: Bearer <token>` on everything except `/health`. Without it, keep the service on localhost or a private network.
 
 You can also trigger a reconcile over HTTP with a separate `RECONCILE_TOKEN`:
 
@@ -200,6 +220,7 @@ That is a dry run unless you add `?apply=true` and have set `ALLOW_ACTUAL_WRITES
 | `... does not equal minus ...; fix the existing drift` | The account and tracker disagree by more than the new linked rows explain   |
 | `Bank sync imported N transaction(s); book them ...`   | Categorize the new bank transactions in Actual, then run again              |
 | `expected one member named ...`                        | Fix `SPLITSER_MEMBER_NAME` so it matches your name in that list exactly     |
+| `... is counted by both ...`                           | Two Splitser accounts resolve to the same person. Check the member names    |
 | Login or API errors from Splitser                      | Check your credentials. The private API may also have changed               |
 | Errors opening the budget                              | Check the Sync ID, and that the server and `@actual-app/api` versions match |
 

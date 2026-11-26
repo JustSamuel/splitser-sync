@@ -1,6 +1,6 @@
 # Splitser sync
 
-Dependency-light TypeScript service (Node.js, pnpm) that reconciles the user's Splitser net balance to an off-budget Actual account. Keep deployment names, account names, credentials, and infrastructure details out of this public repository.
+Dependency-light TypeScript service (Node.js, pnpm) that reconciles one or more Splitser accounts' net balances, each to its own off-budget Actual account, against one shared tracker category. Keep deployment names, account names, credentials, and infrastructure details out of this public repository.
 
 ## Checks
 
@@ -18,7 +18,7 @@ All source is in `src/`, written as erasable TypeScript (no enums or parameter p
 - `simplefin.ts`: SimpleFIN response shapes, setup token and access URL (pure). `simplefin-setup.ts` is its CLI.
 - `reconcile.ts`: reconciliation invariants and the only Actual mutations.
 - `actual.ts`: real API adapter and CLI.
-- `config.ts`: `.env` loading and settings.
+- `config.ts`: `.env` loading and settings; additional Splitser accounts repeat the per-account variables with an `_N` suffix.
 - `server.ts`: composition and scheduling.
 
-Keep private cookie and Actual state in `/data` in containers. Reconciliation refuses unbooked bank imports, changed bank-reported balances, and tracker drift. Rows Actual imported into the Splitser account itself (SimpleFIN) are expected: they are marked reconciled and the adjustment row absorbs any difference.
+Keep private cookie and Actual state in `/data` in containers. Reconciliation refuses unbooked bank imports, changed bank-reported balances, tracker drift across all accounts, and a Splitser member counted by two accounts. Rows Actual imported into a Splitser account itself (SimpleFIN) are expected: they are marked reconciled and that account's adjustment row absorbs any difference.
