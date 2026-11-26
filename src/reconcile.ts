@@ -1,3 +1,5 @@
+import { assertDistinctMembers } from './splitser.ts';
+
 const fail = (message: string): never => {
   throw new Error(message);
 };
@@ -46,6 +48,7 @@ interface ActualRow {
   amount?: number;
   reconciled?: boolean;
   transfer_id?: string | null;
+  starting_balance_flag?: boolean;
 }
 
 const ADJUSTMENT_ID = 'splitser:balance:current';
@@ -126,18 +129,9 @@ export async function reconcileWithActual({
   api: ActualApi;
   config: ReconcileConfig;
 }): Promise<ReconcilePlan> {
-  const counted = new Map<string, string>();
-  for (const { accountName, source } of mirrors) {
-    for (const list of source.lists) {
-      const key = `${list.id}:${list.memberId}`;
-      const other = counted.get(key);
-      if (other !== undefined)
-        fail(
-          `${list.name}: ${source.memberName} is counted by both ${JSON.stringify(other)} and ${JSON.stringify(accountName)}; each Splitser account must be a different person`,
-        );
-      counted.set(key, accountName);
-    }
-  }
+  assertDistinctMembers(
+    mirrors.map(({ accountName, source }) => ({ name: accountName, source })),
+  );
 
   const accounts = await api.getAccounts();
   const targets = mirrors.map((mirror, index) => {
@@ -242,6 +236,10 @@ export async function reconcileWithActual({
     const before = await api.getAccountBalance(target.account.id);
     states.push({
       ...target,
+      startingRows: rows.filter(
+        (row) =>
+          row.starting_balance_flag && !row.reconciled && !row.transfer_id,
+      ),
       existing: adjustments[0],
       newImports,
       importedAmount: newImports.reduce(
@@ -257,6 +255,28 @@ export async function reconcileWithActual({
   const total = sum(states.map((state) => state.source.amount));
   const trackerBefore = tracker.balance;
   const trackerChange = -total - trackerBefore;
+  // Actual's first sync of an empty linked account also adds a starting balance
+  // row without an imported id. Count such rows only when they explain the gap
+  // exactly, so a starting balance the tracker already covers is left alone.
+  const gap =
+    sum(states.map((state) => state.before - state.importedAmount)) +
+    trackerBefore;
+  let subsets: { state: (typeof states)[number]; row: ActualRow }[][] = [[]];
+  for (const state of states)
+    for (const row of state.startingRows)
+      subsets = subsets.concat(
+        subsets.map((subset) => [...subset, { state, row }]),
+      );
+  const explaining =
+    gap === 0
+      ? undefined
+      : subsets.find(
+          (subset) => sum(subset.map(({ row }) => row.amount ?? 0)) === gap,
+        );
+  for (const { state, row } of explaining ?? []) {
+    state.newImports.push(row);
+    state.importedAmount += row.amount ?? 0;
+  }
   const newImports = states.flatMap((state) => state.newImports);
   if (
     apply &&

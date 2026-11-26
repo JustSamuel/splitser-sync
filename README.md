@@ -160,7 +160,13 @@ If you and a partner each have a Splitser account, both can feed the same budget
 
 3. Run `pnpm reconcile`. It lists every account with its own correction, and one change to `Advances`.
 
-When linked, the one SimpleFIN credential serves every account. No new setup token is needed: choose _Link account_ on `Splitser Partner` and pick the SimpleFIN account with the same name. Each account must be a different person; reconcile stops if two of them resolve to the same member of a list.
+When linked, the one SimpleFIN credential serves every account. No new setup token is needed: choose _Link account_ on `Splitser Partner` and pick the SimpleFIN account with the same name. Each account must be a different person; reconcile and the SimpleFIN feed stop if two of them resolve to the same member of a list. After linking, run `pnpm reconcile` again, dry run first. It absorbs the starting balance Actual adds to a newly linked account.
+
+To remove an account again:
+
+1. Delete its `_2` variables and redeploy.
+2. Add that account's balance to this month's `Advances` budget (a negative balance lowers it), so `Advances` equals minus the remaining accounts.
+3. Delete the account in Actual, then run `pnpm reconcile`.
 
 ## Running it
 

@@ -9,6 +9,7 @@ type Row = {
   amount: number;
   reconciled?: boolean;
   transfer_id?: string | null;
+  starting_balance_flag?: boolean;
 };
 type Account = { name: string; balance: number; rows: Row[] };
 
@@ -500,4 +501,51 @@ test('random histories end with each account = its balance, tracker = -total and
   }
   for (const [name, count] of Object.entries(seen))
     assert.ok(count >= 20, `generator stopped covering ${name} (${count})`);
+});
+
+const starting = (amount: number, id = 'start'): Row => ({
+  id,
+  amount,
+  starting_balance_flag: true,
+});
+
+test("Actual's starting balance on a newly linked account is absorbed", async () => {
+  // Linked while empty: starting balance plus one imported row.
+  for (const [start, row, balance] of [
+    [-70, 30, -40],
+    [-30, 30, 0],
+  ] as const) {
+    const backend = fake({
+      tracker: -100,
+      others: [partner(balance, [starting(start), imported('p', row)])],
+      bankResult: { newTransactions: ['start', 'p'] },
+    });
+    const result = await runAll(backend, both(100, balance));
+    assert.equal(result.verified, true);
+    assert.equal(backend.state.tracker, 0 - (100 + balance));
+    assert.deepEqual(
+      backend.state.mirrors[1]!.rows.map((entry) => entry.reconciled),
+      [true, true],
+    );
+  }
+});
+
+test('a starting balance the tracker already covers is left alone', async () => {
+  const backend = fake({
+    tracker: -100,
+    rows: [starting(100)],
+    others: [partner(-30, [starting(-70, 'new'), imported('p', 40)])],
+  });
+  const result = await runAll(backend, both(100, -30));
+  assert.equal(result.verified, true);
+  assert.equal(backend.state.mirrors[0]!.rows[0]!.reconciled, undefined);
+  assert.equal(backend.state.mirrors[1]!.rows[0]!.reconciled, true);
+});
+
+test('a starting balance that does not explain the drift is refused', async () => {
+  const backend = fake({
+    tracker: -100,
+    others: [partner(-40, [starting(-39)])],
+  });
+  await assert.rejects(runAll(backend, both(100, -40)), /does not equal minus/);
 });

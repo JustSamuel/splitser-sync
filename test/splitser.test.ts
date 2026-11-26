@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { memberEffects, splitserEffects } from '../src/splitser.ts';
+import {
+  memberEffects,
+  simplefinSources,
+  splitserEffects,
+} from '../src/splitser.ts';
 
 const list = { id: 'list-1', name: 'Flat' };
 const me = 'me';
@@ -155,4 +159,52 @@ test('mismatching totals are reported but do not fail', async () => {
   assert.equal(result.source.amount, 999);
   assert.equal(result.effects.length, 1);
   assert.equal(warnings.length, 1);
+});
+
+const account = (id: string, member: string, broken = false) => ({
+  id,
+  name: id,
+  memberName: 'Member',
+  client: {
+    async balances() {
+      if (broken) throw new Error(`${id} login failed`);
+      return {
+        data: [
+          {
+            list: { id: 'list-1', name: 'Flat' },
+            data: [
+              {
+                member: { id: member, full_name: 'Member' },
+                balance_total: money(0),
+              },
+            ],
+            cached: false,
+          },
+        ],
+        meta: { lists: 1, cachedLists: 0 },
+      };
+    },
+    async transactions() {
+      return { data: [], meta: { lists: 0, transactions: 0, cachedLists: 0 } };
+    },
+  },
+});
+const quiet = { warn() {} };
+const ids = async (
+  accounts: ReturnType<typeof account>[],
+  requested: string[] = [],
+) =>
+  (await simplefinSources(accounts, requested, quiet)).map((entry) => entry.id);
+
+test('a failing login only drops its own SimpleFIN account', async () => {
+  const accounts = [account('a', 'me'), account('b', 'you', true)];
+  assert.deepEqual(await ids(accounts), ['a']);
+  assert.deepEqual(await ids(accounts, ['a']), ['a']);
+  await assert.rejects(ids(accounts, ['b']), /b login failed/);
+});
+
+test('SimpleFIN refuses one member behind two accounts, even if one is asked', async () => {
+  const accounts = [account('a', 'me'), account('b', 'me')];
+  await assert.rejects(ids(accounts), /counted by both/);
+  await assert.rejects(ids(accounts, ['a']), /counted by both/);
 });

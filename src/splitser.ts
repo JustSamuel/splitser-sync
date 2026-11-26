@@ -48,6 +48,24 @@ export async function splitserBalance(
   };
 }
 
+/** Two accounts resolving to one person would count their balance twice. */
+export function assertDistinctMembers(
+  accounts: { name: string; source: SplitserSource }[],
+): void {
+  const counted = new Map<string, string>();
+  for (const { name, source } of accounts) {
+    for (const list of source.lists) {
+      const key = `${list.id}:${list.memberId}`;
+      const other = counted.get(key);
+      if (other !== undefined)
+        fail(
+          `${list.name}: ${source.memberName} is counted by both ${JSON.stringify(other)} and ${JSON.stringify(name)}; each Splitser account must be a different person`,
+        );
+      counted.set(key, name);
+    }
+  }
+}
+
 /** One expense or income, as it changes the member's balance. */
 export interface Effect {
   /** Stable and unique across lists: `splitser:<list>:<type>:<id>`. */
@@ -147,4 +165,55 @@ export async function splitserEffects(
     effects.push(...listEffects);
   }
   return { source, effects };
+}
+
+/**
+ * The accounts SimpleFIN asked for. A login that fails only drops its own
+ * account, unless nothing is left to answer with.
+ */
+export async function simplefinSources(
+  accounts: {
+    id: string;
+    name: string;
+    memberName: string | undefined;
+    client: Pick<SplitserClient, 'balances' | 'transactions'>;
+  }[],
+  requested: string[],
+  logger: { warn: (...args: unknown[]) => void } = console,
+) {
+  const wanted = (id: string) =>
+    requested.length === 0 || requested.includes(id);
+  // Balances of the others are still needed for the duplicate-member check.
+  const settled = await Promise.allSettled(
+    accounts.map(async ({ id, name, memberName, client }) => ({
+      id,
+      name,
+      ...(wanted(id)
+        ? await splitserEffects(client, memberName, logger)
+        : {
+            source: await splitserBalance(client, memberName),
+            effects: [],
+          }),
+    })),
+  );
+  const loaded = settled.flatMap((result) =>
+    result.status === 'fulfilled' ? [result.value] : [],
+  );
+  assertDistinctMembers(loaded);
+  const failures = settled.flatMap((result, index) =>
+    result.status === 'rejected'
+      ? [{ account: accounts[index]!, reason: result.reason as unknown }]
+      : [],
+  );
+  for (const { account, reason } of failures)
+    logger.warn(`${account.name}: could not load from Splitser`, reason);
+  const answer = loaded.filter((account) => wanted(account.id));
+  const failed = failures.find(({ account }) => wanted(account.id));
+  if (answer.length === 0 && failed) throw failed.reason;
+  return answer.map(({ id, name, source, effects }) => ({
+    id,
+    name,
+    balance: source.amount,
+    effects,
+  }));
 }

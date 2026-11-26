@@ -4,7 +4,7 @@ import { loadEnv, projectRoot, splitserAccounts } from './config.ts';
 import { reconcile } from './actual.ts';
 import { createHandler } from './http.ts';
 import { simplefinAccounts } from './simplefin.ts';
-import { splitserEffects } from './splitser.ts';
+import { simplefinSources } from './splitser.ts';
 
 await loadEnv(projectRoot);
 const host = process.env.HOST || '127.0.0.1';
@@ -18,19 +18,14 @@ const handler = createHandler({
   reconcile,
   async simplefin(query) {
     return simplefinAccounts({
-      accounts: await Promise.all(
-        accounts.map(async (account) => {
-          const { source, effects } = await splitserEffects(
-            account.client,
-            account.memberName,
-          );
-          return {
-            id: account.id,
-            name: account.actualAccount,
-            balance: source.amount,
-            effects,
-          };
-        }),
+      accounts: await simplefinSources(
+        accounts.map((account) => ({
+          id: account.id,
+          name: account.actualAccount,
+          memberName: account.memberName,
+          client: account.client,
+        })),
+        query.accounts,
       ),
       query,
       now: Math.floor(Date.now() / 1000),
