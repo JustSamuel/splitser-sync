@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { splitserAccounts } from '../src/config.ts';
 
 const base = {
@@ -14,7 +16,7 @@ const partner = {
   ACTUAL_ACCOUNT_2: 'Splitser Partner',
 };
 
-test('the unsuffixed variables configure the one account as before', () => {
+test('the unsuffixed variables alone configure one account', () => {
   const accounts = splitserAccounts('/app', { ...base, SPLITSER_EMAIL_2: '' });
   assert.deepEqual(
     accounts.map((account) => [
@@ -114,5 +116,20 @@ test('accounts cannot share an Actual account or a cookie file', () => {
         COOKIE_FILE_2: '/data/cookies.txt',
       }),
     /same cookie file/,
+  );
+});
+
+test('every default cookie file is ignored by git and Docker', () => {
+  const root = new URL('..', import.meta.url).pathname;
+  const files = splitserAccounts(root, {
+    SPLITSER_MEMBER_NAME_2: 'Partner',
+    ACTUAL_ACCOUNT_2: 'Splitser Partner',
+  }).map((account) => account.splitser.cookieFile);
+  assert.equal(files.length, 2);
+  for (const file of files)
+    execFileSync('git', ['check-ignore', '--quiet', file], { cwd: root });
+  assert.match(
+    readFileSync(`${root}.dockerignore`, 'utf8'),
+    /^cookies\*\.txt$/m,
   );
 });

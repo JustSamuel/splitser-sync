@@ -9,7 +9,11 @@ const read = new Set<string>();
 for (const file of (await readdir('src')).filter((name) =>
   name.endsWith('.ts'),
 )) {
-  const source = await readFile(`src/${file}`, 'utf8');
+  // The list of per-account names is not a read of them.
+  const source = (await readFile(`src/${file}`, 'utf8')).replace(
+    /ACCOUNT_VARIABLES = \[[^\]]*\]/,
+    '',
+  );
   for (const match of source.matchAll(
     /\benv\.([A-Z][A-Z0-9_]+)|['"]([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+)['"]/g,
   ))
